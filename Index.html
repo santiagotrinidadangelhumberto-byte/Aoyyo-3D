@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, orientation=landscape">
+    <title>AOYYO 3D: HORIZONTAL & BOMBAS</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; color: white; font-family: sans-serif; user-select: none; touch-action: none;}
+        #juego-3d { width: 100vw; height: 100vh; display: block; }
+        
+        /* PANTALLA DE INICIO PARA FULLSCREEN */
+        #overlay-inicio {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 100; text-align: center;
+        }
+        .btn-jugar { padding: 15px 30px; font-size: 20px; background: red; color: white; border: none; border-radius: 10px; }
+
+        /* HUD SUPERIOR */
+        .hud { position: absolute; top: 10px; width: 100%; display: flex; justify-content: space-around; z-index: 10; pointer-events: none;}
+        .stat { background: rgba(0,0,0,0.7); padding: 5px 15px; border-radius: 15px; border: 1px solid lime; font-size: 14px;}
+
+        /* TIENDA */
+        #menu-tienda { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 70%; background: rgba(0,0,0,0.95); border: 3px solid gold; padding: 15px; border-radius: 20px; display: none; z-index: 50; text-align: center; }
+        .item-tienda { background: #222; margin: 8px 0; padding: 8px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .btn-buy { background: gold; color: black; border: none; padding: 8px; border-radius: 5px; font-weight: bold; }
+
+        /* BOTONES UI */
+        .btn-ui { position: absolute; background: rgba(255,255,255,0.2); border: 2px solid white; color: white; padding: 10px; border-radius: 10px; z-index: 30; font-weight: bold;}
+        #btn-open-tienda { top: 15px; right: 15px; } /* Ajuste horizontal */
+        #btn-set-name { top: 15px; left: 15px; } /* Ajuste horizontal */
+
+        /* CONTROLES ADAPTADOS A HORIZONTAL */
+        #joy-container { position: absolute; bottom: 20px; left: 20px; width: 110px; height: 110px; background: rgba(255,255,255,0.1); border-radius: 50%; z-index: 20; border: 2px solid rgba(255,255,255,0.2); }
+        #joy-stick { position: absolute; top: 30px; left: 30px; width: 50px; height: 50px; background: rgba(255,255,255,0.4); border-radius: 50%; }
+        #btn-shoot { position: absolute; bottom: 30px; right: 30px; width: 90px; height: 90px; background: rgba(255,0,0,0.4); border: 4px solid red; border-radius: 50%; z-index: 20; font-size: 40px; display: flex; align-items: center; justify-content: center; }
+        
+        /* BOTÓN BOMBA (NUEVO) */
+        #btn-bomba { position: absolute; bottom: 30px; left: 150px; width: 70px; height: 70px; background: rgba(50,50,50,0.6); border: 3px solid #333; border-radius: 50%; z-index: 20; font-size: 30px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;}
+        #btn-bomba:active { background: rgba(0,0,0,0.9); }
+
+        /* MIRA */
+        .reticle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 80px; height: 80px; pointer-events: none; z-index: 5; border: 1px solid rgba(0,255,0,0.3); border-radius: 50%;}
+        .dot { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 4px; height: 4px; background: lime; border-radius: 50%; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay-inicio">
+        <h1 style="color:red; text-shadow: 0 0 10px red;">AOYYO 3D: HORIZON</h1>
+        <p>Gira tu móvil a horizontal</p>
+        <button class="btn-jugar" onclick="iniciarFullscreen()">ENTRAR AL JUEGO</button>
+    </div>
+
+    <div class="hud">
+        <div class="stat">👤 <span id="nombre-hud">Jugador</span></div>
+        <div class="stat">❤️ <span id="hp-hud">8</span></div>
+        <div class="stat">💰 <span id="oro-hud">0</span></div>
+    </div>
+
+    <button class="btn-ui" id="btn-open-tienda">🛒 TIENDA</button>
+    <button class="btn-ui" id="btn-set-name">✏️ NOMBRE</button>
+
+    <div id="menu-tienda">
+        <h2 style="color: gold; margin-top: 0;">MEJORAS</h2>
+        <div class="item-tienda"><span>⚡ Vel. Disparo</span><button class="btn-buy" onclick="comprar('vel')">30 💰</button></div>
+        <div class="item-tienda"><span>❤️ Vida Extra</span><button class="btn-buy" onclick="comprar('vida')">50 💰</button></div>
+        <button onclick="cerrarTienda()" style="margin-top: 10px; background: red; color: white; border: none; padding: 8px; border-radius: 5px;">CERRAR</button>
+    </div>
+
+    <div class="reticle"><div class="dot"></div></div>
+    <canvas id="juego-3d"></canvas>
+    
+    <div id="joy-container"><div id="joy-stick"></div></div>
+    <div id="btn-bomba">💣</div> <div id="btn-shoot">💥</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+    // --- DATOS Y PERSISTENCIA ---
+    let datos = JSON.parse(localStorage.getItem('aoyyo_save')) || { nombre: "Jugador", oro: 0, vidaMax: 8, velDisparo: 1 };
+    let hp = datos.vidaMax;
+    let canShoot = true;
+    let zombies = [];
+    let balas = []; // Array para físicas de balas amarillas
+    let bombas = []; // Array para bombas
+
+    function guardar() {
+        localStorage.setItem('aoyyo_save', JSON.stringify(datos));
+        document.getElementById('nombre-hud').innerText = datos.nombre;
+        document.getElementById('oro-hud').innerText = datos.oro;
+        document.getElementById('hp-hud').innerText = Math.ceil(hp);
+    }
+
+    // --- ACTIVAR FULLSCREEN Y HORIZONTAL ---
+    function iniciarFullscreen() {
+        const elem = document.documentElement;
+        if (elem.requestFullscreen) { elem.requestFullscreen();
+        } else if (elem.webkitRequestFullscreen) { elem.webkitRequestFullscreen(); }
+        
+        // Bloquear orientación horizontal (necesita permiso del navegador en Android)
+        if (screen.orientation && screen.orientation.lock) {
+            screen.orientation.lock("landscape").catch(err => {
+                console.log("Bloqueo de orientación no soportado o denegado.");
+            });
+        }
+        
+        document.getElementById('overlay-inicio').style.display = 'none';
+        iniciarMotor3D();
+    }
+
+    // --- MOTOR 3D ---
+    let scene, camera, renderer, gun;
+    
+    function iniciarMotor3D() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.7, 0);
+        renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("juego-3d"), antialias: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+        sun.position.set(10, 20, 10);
+        scene.add(sun);
+
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshPhongMaterial({ color: 0x2d5a27 }));
+        ground.rotation.x = -Math.PI/2;
+        scene.add(ground);
+
+        gun = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.8), new THREE.MeshPhongMaterial({ color: 0x222 }));
+        gun.position.set(0.4, -0.4, -0.6);
+        camera.add(gun);
+        scene.add(camera);
+
+        guardar();
+        animate();
+    }
+
+    // --- MECÁNICAS ---
+    // APARECE UN ZOMBIE CADA 1.5 SEGUNDOS (Verde)
+    function crearZombie() {
+        if(zombies.length > 25 || !scene) return; 
+        const zGroup = new THREE.Group();
+        const zBody = new THREE.Mesh(new THREE.BoxGeometry(1.2, 3, 1.2), new THREE.MeshPhongMaterial({ color: 0x228B22 })); 
+        zGroup.add(zBody);
+        
+        // Vida Zombie = Vida Jugador Max
+        let zData = { mesh: zGroup, body: zBody, hp: datos.vidaMax }; 
+        
+        const angulo = Math.random() * Math.PI * 2;
+        zGroup.position.set(Math.cos(angulo)*30, 1.5, Math.sin(angulo)*30);
+        scene.add(zGroup);
+        zombies.push(zData);
+    }
+    setInterval(crearZombie, 1500);
+
+    // --- SISTEMA DE BALAS AMARILLAS FÍSICAS ---
+    function dispararBala() {
+        const balaGeo = new THREE.SphereGeometry(0.1, 8, 8);
+        const balaMat = new THREE.MeshBasicMaterial({ color: 0xffff00 }); // AMARILLO
+        const bala = new THREE.Mesh(balaGeo, balaMat);
+        
+        // Posición inicial de la bala (en la punta del arma)
+        const vArma = new THREE.Vector3();
+        gun.getWorldPosition(vArma);
+        bala.position.copy(vArma);
+        
+        // Dirección de la bala (hacia donde mira la cámara)
+        const vDir = new THREE.Vector3();
+        camera.getWorldDirection(vDir);
+        vDir.normalize();
+        
+        scene.add(bala);
+        balas.push({ mesh: bala, velocity: vDir.multiplyScalar(2) }); // Velocidad de la bala
+    }
+
+    // --- SISTEMA DE BOMBA DE TIEMPO ---
+    function plantarBomba() {
+        if(datos.oro < 10) { alert("¡Bomba cuesta 10 💰!"); return; }
+        datos.oro -= 10; guardar();
+
+        const bombaGeo = new THREE.SphereGeometry(0.5, 16, 16);
+        const bombaMat = new THREE.MeshPhongMaterial({ color: 0x111111, shininess: 100 }); // OSCURA
+        const bomba = new THREE.Mesh(bombaGeo, bombaMat);
+        
+        // Se planta en el suelo frente al jugador
+        const vPos = new THREE.Vector3();
+        camera.getWorldPosition(vPos);
+        const vDir = new THREE.Vector3();
+        camera.getWorldDirection(vDir);
+        bomba.position.set(vPos.x + vDir.x*3, 0.5, vPos.z + vDir.z*3);
+        
+        scene.add(bomba);
+        const tDesc = document.createElement('div'); // Timer visual opcional
+        tDesc.style.position = 'absolute'; tDesc.style.color='white';
+        
+        // Lógica de la bomba
+        bombas.push({ mesh: bomba, timer: 10 * 60 }); // 10 segundos a 60fps
+    }
+
+    // --- CONTROLES Y DISPARO ---
+    let joy = { active: false, x: 0, y: 0, sX: 0, sY: 0 };
+    const jC = document.getElementById('joy-container');
+    const jS = document.getElementById('joy-stick');
+    jC.addEventListener('touchstart', e => { joy.active=true; const r=jC.getBoundingClientRect(); joy.sX=r.left+r.width/2; joy.sY=r.top+r.height/2; });
+    window.addEventListener('touchmove', e => { if(!joy.active) return; const t=e.touches[0]; const dx=t.clientX-joy.sX, dy=t.clientY-joy.sY; const d=Math.min(Math.sqrt(dx*dx+dy*dy), 40); const a=Math.atan2(dy, dx); joy.x=Math.cos(a)*(d/40); joy.y=Math.sin(a)*(d/40); jS.style.transform=`translate(${joy.x*40}px, ${joy.y*40}px)`; });
+    window.addEventListener('touchend', () => { joy.active=false; joy.x=0; joy.y=0; jS.style.transform='translate(0,0)'; });
+
+    // Botones UI
+    document.getElementById('btn-set-name').onclick = () => { let n = prompt("Tu nombre:", datos.nombre); if(n){datos.nombre=n; guardar();} };
+    document.getElementById('btn-open-tienda').onclick = () => document.getElementById('menu-tienda').style.display = 'block';
+    function cerrarTienda() { document.getElementById('menu-tienda').style.display = 'none'; }
+    function comprar(t) { if(t==='vel' && datos.oro>=30){ datos.oro-=30; datos.velDisparo+=0.5; } else if(t==='vida' && datos.oro>=50){ datos.oro-=50; datos.vidaMax+=1; hp=datos.vidaMax; } guardar(); }
+    
+    document.getElementById('btn-bomba').addEventListener('touchstart', (e) => {e.preventDefault(); plantarBomba(); });
+
+    document.getElementById('btn-shoot').onclick = () => {
+        if(!canShoot || !scene) return;
+        canShoot = false;
+        gun.position.z += 0.2; setTimeout(() => gun.position.z = -0.6, 100);
+        
+        dispararBala(); // Nueva función de disparo
+
+        setTimeout(() => canShoot = true, 1000 / datos.velDisparo);
+    };
+
+    // --- BUCLE PRINCIPAL (FÍSICAS Y RENDER) ---
+    function animate() {
+        if(!scene) return;
+        requestAnimationFrame(animate);
+        
+        // Movimiento Jugador
+        if(joy.active) {
+            camera.rotation.y -= joy.x * 0.05;
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir); dir.y = 0;
+            camera.position.addScaledVector(dir, -joy.y * 0.2);
+        }
+        
+        // FÍSICAS DE BALAS Y COLISIONES
+        for(let i = balas.length - 1; i >= 0; i--) {
+            let b = balas[i];
+            b.mesh.position.add(b.velocity); // Mover bala
+            
+            // Si la bala se va muy lejos, eliminarla
+            if(camera.position.distanceTo(b.mesh.position) > 100) {
+                scene.remove(b.mesh); balas.splice(i, 1); continue;
+            }
+            
+            // Revisar colisión con Zombies (cuerpo a cuerpo)
+            zombies.forEach((z, zIndex) => {
+                const bPos = b.mesh.position;
+                const zPos = z.mesh.position;
+                // Colisión simple por distancia
+                if(bPos.distanceTo(zPos) < 1.5 && scene) {
+                    z.hp--; // Daño de bala (1 de vida)
+                    scene.remove(b.mesh); balas.splice(i, 1); // Bala desaparece
+                    
+                    if(z.hp <= 0) {
+                        scene.remove(z.mesh);
+                        zombies.splice(zIndex, 1);
+                        datos.oro += 5; guardar();
+                    }
+                }
+            });
+        }
+
+        // FÍSICAS DE BOMBAS (TEMPORIZADOR Y EXPLOSIÓN)
+        for(let i = bombas.length - 1; i >= 0; i--) {
+            let b = bombas[i];
+            b.timer--;
+            
+            // Efecto visual de parpadeo antes de explotar
+            if(b.timer < 180 && b.timer % 10 === 0) { b.mesh.material.color.set(b.timer % 20 === 0 ? 0xff0000 : 0x111111); }
+
+            if(b.timer <= 0 && scene) {
+                // !!! EXPLOSIÓN !!!
+                scene.remove(b.mesh);
+                bombas.splice(i, 1);
+                
+                // Efecto visual simple de explosión (flash amarillo)
+                const expGeo = new THREE.SphereGeometry(15, 32, 32);
+                const expMat = new THREE.MeshBasicMaterial({ color: 0xffffaa, transparent: true, opacity: 0.8 });
+                const explosion = new THREE.Mesh(expGeo, expMat);
+                explosion.position.copy(b.mesh.position);
+                scene.add(explosion);
+                setTimeout(()=> scene.remove(explosion), 100);
+
+                // Matar zombies a distancia de 15
+                for(let zIndex = zombies.length - 1; zIndex >= 0; zIndex--) {
+                    const z = zombies[zIndex];
+                    if(z.mesh.position.distanceTo(b.mesh.position) < 15) {
+                        scene.remove(z.mesh);
+                        zombies.splice(zIndex, 1);
+                        datos.oro += 2; // Menos oro por muerte de bomba
+                        guardar();
+                    }
+                }
+            }
+        }
+        
+        // Movimiento de la horda Zombie (Mismo código de antes)
+        zombies.forEach(z => {
+            const dist = camera.position.distanceTo(z.mesh.position);
+            if(dist > 2) {
+                const dZ = new THREE.Vector3().subVectors(camera.position, z.mesh.position).normalize();
+                z.mesh.position.x += dZ.x * 0.05; z.mesh.position.z += dZ.z * 0.05;
+                z.mesh.lookAt(camera.position.x, 1.5, camera.position.z);
+            } else {
+                hp -= 0.01; guardar();
+                if(hp <= 0) { alert("¡LA HORDA TE COMIÓ!"); location.reload(); }
+            }
+        });
+        renderer.render(scene, camera);
+    }
+</script>
+</body>
+</html>
